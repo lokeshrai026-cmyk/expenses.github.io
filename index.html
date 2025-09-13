@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Expenses</title>
+
+  <!-- Chart.js for bar chart -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%}
+    body{
+      font-family: "Segoe UI", Roboto, Arial, sans-serif;
+      background:#fff;
+      color:#222;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+    }
+
+    .container{
+      width:100%;
+      max-width:900px;
+      background:#fff;
+      border-radius:12px;
+      box-shadow:0 6px 30px rgba(0,0,0,0.08);
+      padding:20px;
+    }
+
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+    header h1{font-size:1.25rem;color:#ff8800}
+    header .sub{font-size:0.95rem;color:#666}
+
+    .tabs { display:flex; gap:8px; margin-bottom:12px; flex-wrap: wrap; }
+    .tab-btn {
+      flex:1;
+      padding:10px 12px;
+      border-radius:8px;
+      background:transparent;
+      border:1px solid #eee;
+      cursor:pointer;
+      font-weight:600;
+      transition: all .18s;
+      background-color: #fafafa;
+    }
+    .tab-btn.active { background:#ffefdd; border-color:#ffcc99; color:#ff8800; transform:translateY(-2px) }
+
+    .content { position:relative; min-height:400px; overflow:hidden; }
+
+    .tab-panel {
+      position:absolute;
+      inset:0;
+      padding:8px 0 0 0;
+      opacity:0;
+      transform:translateX(-30px);
+      transition: transform .32s cubic-bezier(.2,.9,.2,1), opacity .28s ease;
+      pointer-events:none;
+      display:flex;
+      justify-content:center;
+      align-items:flex-start;
+    }
+    .tab-panel.active {
+      opacity:1;
+      transform:translateX(0);
+      pointer-events:auto;
+    }
+
+    .calendar {
+      width:100%;
+      max-width:640px;
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+      align-items:center;
+      padding:12px;
+    }
+    .calendar .full { grid-column: 1 / -1; }
+    input[type="date"], input[type="number"]{
+      width:100%;
+      padding:10px;
+      border-radius:8px;
+      border:1px solid #ddd;
+      font-size:1rem;
+      display:block;
+    }
+    .btn {
+      padding:10px;
+      border-radius:8px;
+      border:none;
+      background:#ff8800;
+      color:#fff;
+      font-weight:700;
+      cursor:pointer;
+    }
+    .btn.secondary { background:#ddd; color:#222 }
+
+    .info-row { display:flex; gap:12px; align-items:center; margin-top:12px; width:100%; }
+    .monthly-total { font-weight:700; color:#0066cc; flex:1; }
+    .limit-status { font-weight:700; padding:8px 10px; border-radius:8px; text-align:center; }
+
+    .history-list{
+      width:100%;
+      max-width:640px;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      max-height:400px;
+      overflow:auto;
+      padding:12px;
+    }
+    .history-item{
+      display:flex;
+      justify-content:space-between;
+      padding:10px;
+      background:#fafafa;
+      border-radius:8px;
+      border:1px solid #eee;
+    }
+
+    .limit-section { width:100%; max-width:420px; display:flex; gap:8px; align-items:center; padding:12px; }
+    .limit-note { margin-top:8px; color:#666; font-size:0.95rem; padding:0 12px; }
+
+    canvas {
+      width: 100% !important;
+      max-height: 300px;
+      margin-top: 10px;
+    }
+
+    @media (max-width:720px){
+      .calendar{ grid-template-columns: 1fr; }
+      .limit-section{ flex-direction:column; align-items:stretch; }
+      .container{ padding:16px }
+    }
+  </style>
+</head>
+<link rel="manifest" href="manifest.json">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js');
+  }
+</script>
+
+<body>
+  <div class="container" role="application" aria-label="Expenses app">
+    <header>
+      <h1>Expenses</h1>
+      <div class="sub">Auto IST date • Saved locally</div>
+    </header>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="calendarTab" type="button">📅 Calendar</button>
+      <button class="tab-btn" data-tab="historyTab" type="button">📜 History (48h)</button>
+      <button class="tab-btn" data-tab="limitTab" type="button">⛔ Daily Limit</button>
+      <button class="tab-btn" data-tab="graphTab" type="button">📊 Graph of Expenditure</button>
+    </div>
+
+    <div class="content">
+      <section id="calendarTab" class="tab-panel active">
+        <div class="calendar">
+          <label class="full">
+            <div style="margin-bottom:6px;font-weight:600">Date (IST)</div>
+            <input type="date" id="datePicker">
+          </label>
+
+          <label>
+            <div style="margin-bottom:6px;font-weight:600">Amount (₹)</div>
+            <input type="number" id="amountInput" placeholder="Enter amount spent" min="0" step="0.01">
+          </label>
+
+          <div class="full" style="display:flex;gap:12px">
+            <button class="btn" id="addBtn" type="button">Add Expense</button>
+            <button class="btn secondary" id="todayBtn" type="button">Set Today (IST)</button>
+          </div>
+
+          <div class="full info-row">
+            <div class="monthly-total" id="monthlyTotal">Total This Month: ₹0</div>
+            <div id="calendarWarning" class="limit-status">No daily limit set</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="historyTab" class="tab-panel">
+        <div style="width:100%;max-width:640px;">
+          <div style="margin-bottom:10px;color:#555">Showing totals per date for the last 48 hours:</div>
+          <div class="history-list" id="historyList"></div>
+        </div>
+      </section>
+
+      <section id="limitTab" class="tab-panel">
+        <div style="width:100%;max-width:640px;">
+          <div class="limit-section">
+            <input type="number" id="dailyLimit" placeholder="Set daily limit in ₹" min="0" step="0.01">
+            <button class="btn" id="saveLimitBtn" type="button">Save Limit</button>
+          </div>
+          <div class="limit-note" id="limitNote">Set a daily spending limit — the Calendar will show live status.</div>
+        </div>
+      </section>
+
+      <section id="graphTab" class="tab-panel">
+        <div style="width:100%;max-width:640px;padding:12px;">
+          <h2 style="margin-bottom:10px;color:#ff8800;">Daily Spending Graph</h2>
+          <canvas id="expensesChart"></canvas>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'expenses_v1';
+    const LIMIT_KEY = 'dailyLimit_v1';
+
+    let expenses = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    let dailyLimit = localStorage.getItem(LIMIT_KEY) ? parseFloat(localStorage.getItem(LIMIT_KEY)) : null;
+
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabPanels = document.querySelectorAll('.tab-panel');
+    const datePicker = document.getElementById('datePicker');
+    const amountInput = document.getElementById('amountInput');
+    const addBtn = document.getElementById('addBtn');
+    const todayBtn = document.getElementById('todayBtn');
+    const monthlyTotalEl = document.getElementById('monthlyTotal');
+    const calendarWarningEl = document.getElementById('calendarWarning');
+    const historyListEl = document.getElementById('historyList');
+    const dailyLimitInput = document.getElementById('dailyLimit');
+    const saveLimitBtn = document.getElementById('saveLimitBtn');
+    const chartCanvas = document.getElementById('expensesChart');
+    let chart;
+    let warnedToday = false; // ✅ New flag to play sound only once
+
+    function getTodayDateIST(){
+      const now = new Date();
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const ist = new Date(utc + 5.5 * 60 * 60 * 1000);
+      return ist.toISOString().split('T')[0];
+    }
+
+    function setTodayDatePicker(){
+      datePicker.value = getTodayDateIST();
+      checkDailyLimitAndUpdateUI();
+    }
+
+    tabBtns.forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const tabId = btn.dataset.tab;
+        tabBtns.forEach(b=>b.classList.remove('active'));
+        tabPanels.forEach(p=>p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(tabId).classList.add('active');
+
+        if(tabId === 'historyTab') renderHistory();
+        if(tabId === 'graphTab') renderChart();
+        checkDailyLimitAndUpdateUI();
+      });
+    });
+
+    addBtn.addEventListener('click', onAddExpense);
+    amountInput.addEventListener('keydown', e => { if(e.key === 'Enter') onAddExpense(); });
+    todayBtn.addEventListener('click', setTodayDatePicker);
+
+    function onAddExpense(){
+      const date = datePicker.value || getTodayDateIST();
+      const amount = parseFloat(amountInput.value);
+      if(!date || !amount || amount <= 0){
+        alert('Please enter a valid amount and date.');
+        return;
+      }
+      expenses.push({ date, amount, timestamp: Date.now() });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
+      amountInput.value = '';
+      updateMonthlyTotal();
+      checkDailyLimitAndUpdateUI();
+    }
+
+    saveLimitBtn.addEventListener('click', ()=>{
+      const v = parseFloat(dailyLimitInput.value);
+      if(!v || v <= 0){
+        alert('Enter a valid limit amount.');
+        return;
+      }
+      dailyLimit = v;
+      localStorage.setItem(LIMIT_KEY, dailyLimit);
+      checkDailyLimitAndUpdateUI();
+      alert(`Daily limit set to ₹${dailyLimit}`);
+    });
+
+    function updateMonthlyTotal(){
+      const today = getTodayDateIST();
+      const [y,m] = today.split('-').map(Number);
+      let monthSum = 0;
+      for(const e of expenses){
+        const [ey,em] = e.date.split('-').map(Number);
+        if(ey === y && em === m) monthSum += e.amount;
+      }
+      monthlyTotalEl.textContent = `Total This Month: ₹${monthSum.toFixed(2)}`;
+    }
+
+    function renderHistory(){
+      historyListEl.innerHTML = '';
+      const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+      const recent = expenses.filter(e => e.timestamp >= cutoff);
+      if(recent.length === 0){
+        historyListEl.innerHTML = '<div style="color:#666">No recent expenses in the last 48 hours.</div>';
+        return;
+      }
+      const grouped = {};
+      for(const e of recent){
+        grouped[e.date] = (grouped[e.date] || 0) + e.amount;
+      }
+      const dates = Object.keys(grouped).sort((a,b)=> b.localeCompare(a));
+      for(const date of dates){
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        div.innerHTML = `<div>${date}</div><div>₹${grouped[date].toFixed(2)}</div>`;
+        historyListEl.appendChild(div);
+      }
+    }
+
+    function checkDailyLimitAndUpdateUI(){
+      const today = datePicker.value || getTodayDateIST();
+      let todaySum = 0;
+      for(const e of expenses){
+        if(e.date === today) todaySum += e.amount;
+      }
+
+      if(dailyLimit === null || isNaN(dailyLimit)){
+        calendarWarningEl.textContent = 'No daily limit set';
+        calendarWarningEl.style.background = 'transparent';
+        calendarWarningEl.style.color = '#666';
+        warnedToday = false;
+        return;
+      }
+
+      if(todaySum > dailyLimit){
+        calendarWarningEl.textContent = `⚠️ Exceeded: ₹${todaySum.toFixed(2)} / ₹${dailyLimit.toFixed(2)}`;
+        calendarWarningEl.style.background = '#ffe6e6';
+        calendarWarningEl.style.color = '#b02a2a';
+        if(!warnedToday){ 
+          playWarningSound(); 
+          warnedToday = true;
+        }
+      } else {
+        calendarWarningEl.textContent = `✅ Safe: ₹${todaySum.toFixed(2)} / ₹${dailyLimit.toFixed(2)}`;
+        calendarWarningEl.style.background = '#e9fff0';
+        calendarWarningEl.style.color = '#0a7a2a';
+        warnedToday = false;
+      }
+    }
+
+    function renderChart(){
+      const grouped = {};
+      for(const e of expenses){
+        grouped[e.date] = (grouped[e.date] || 0) + e.amount;
+      }
+      const labels = Object.keys(grouped).sort();
+      const data = labels.map(date=> grouped[date]);
+
+      if(chart) chart.destroy();
+      chart = new Chart(chartCanvas, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Daily Spending (₹)',
+            data,
+            backgroundColor: '#ff8800'
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+
+    function playWarningSound(){
+      const audio = new Audio("https://cdn.pixabay.com/download/audio/2023/02/28/audio_2750b6a4bb.mp3?filename=notification-3-198841.mp3");
+      audio.volume = 0.7;
+      audio.play().catch(err => console.log("Audio play blocked:", err));
+    }
+
+    function init(){
+      setTodayDatePicker();
+      updateMonthlyTotal();
+      if(localStorage.getItem(LIMIT_KEY)){
+        dailyLimit = parseFloat(localStorage.getItem(LIMIT_KEY));
+        if(!isNaN(dailyLimit)) dailyLimitInput.value = dailyLimit;
+      }
+      checkDailyLimitAndUpdateUI();
+    }
+
+    init();
+  </script>
+</body>
+</html>
